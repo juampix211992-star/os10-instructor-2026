@@ -7,7 +7,7 @@ import QuizView from './components/QuizView';
 import TrueFalseView from './components/TrueFalseView';
 import VisualStudy from './components/VisualStudy';
 import ResultsView from './components/ResultsView';
-import { getChatWithNavigation } from './geminiService';
+import { getChatWithNavigation, generateQuiz } from './geminiService';
 
 interface UserAccount {
   username: string;
@@ -46,6 +46,8 @@ const App: React.FC = () => {
   ]);
   const [assistantInput, setAssistantInput] = useState('');
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [diagResult, setDiagResult] = useState<any>(null);
 
   useEffect(() => {
     localStorage.setItem('os10_history_estudiante', JSON.stringify(quizHistory));
@@ -188,8 +190,29 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <button onClick={() => startQuiz()} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] shadow-lg transition-all transform active:scale-95">Opción Múltiple</button>
             <button onClick={() => startTrueFalseQuiz()} className="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] shadow-lg transition-all transform active:scale-95">Verdadero/Falso</button>
+            <button onClick={async () => {
+              setDiagOpen(true);
+              try {
+                const res = await generateQuiz(quizTopic, [], difficulty);
+                setDiagResult({ ok: true, count: res.length, sample: res.slice(0,3) });
+              } catch (e) {
+                setDiagResult({ ok: false, error: (e as any).message || String(e) });
+              }
+            }} className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] shadow-lg transition-all">Diagnóstico</button>
           </div>
         </header>
+
+        {diagOpen && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/40 p-6">
+            <div className="bg-white rounded-2xl p-6 max-w-3xl w-full">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-black uppercase">Diagnóstico de carga de preguntas</h3>
+                <button onClick={() => { setDiagOpen(false); setDiagResult(null); }} className="text-sm text-gray-500">Cerrar</button>
+              </div>
+              <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto max-h-[60vh]">{JSON.stringify(diagResult, null, 2)}</pre>
+            </div>
+          </div>
+        )}
 
         <div className="p-6 md:p-10">
           {mode === AppMode.DASHBOARD && (
