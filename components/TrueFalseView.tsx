@@ -45,11 +45,13 @@ const TrueFalseView: React.FC<TrueFalseViewProps> = ({ topic, difficulty = Diffi
       }
 
       // Mezclar preguntas
-      setQuestions(filtered.sort(() => Math.random() - 0.5));
+      const shuffled = filtered.sort(() => Math.random() - 0.5);
+      console.debug('[TrueFalseView] questions loaded:', shuffled.length, shuffled.slice(0,3));
+      setQuestions(shuffled);
       setError(null);
     } catch (err) {
       console.error('Error al cargar preguntas V/F:', err);
-      setError('Error al cargar las preguntas. Intenta de nuevo.');
+      setError('Error al cargar las preguntas. Intenta de nuevo. (' + (err && (err as any).message ? (err as any).message : String(err)) + ')');
       setQuestions([]);
     }
   }, [topic, excludeQuestions]);

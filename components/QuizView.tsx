@@ -30,6 +30,7 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
         setLoading(true);
         setError(null);
         const data = await generateQuiz(topic, excludeQuestions, difficulty);
+        console.debug('[QuizView] generateQuiz returned length:', data ? data.length : 'null', data && data.slice ? data.slice(0,3) : data);
         
         // Validar que tenemos preguntas
         if (!data || data.length === 0) {
@@ -53,7 +54,7 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
         setQuestions(validQuestions);
       } catch (err) {
         console.error('Error al cargar quiz:', err);
-        setError('Error al cargar el examen. Por favor intenta de nuevo.');
+        setError('Error al cargar el examen. Por favor intenta de nuevo. (' + (err && (err as any).message ? (err as any).message : String(err)) + ')');
         setQuestions([]);
       } finally {
         setLoading(false);
