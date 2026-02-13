@@ -1,127 +1,94 @@
-
 import React, { useState, useEffect } from 'react';
-import { generateQuiz } from '../geminiService';
-import { Question, Difficulty } from '../types';
-import { QUESTION_DATABASE } from '../questionDatabase';
+import { Difficulty } from '../types';
+import { TRUE_FALSE_DATABASE } from '../trueFalseDatabase';
 
-interface QuizViewProps {
+interface TrueFalseViewProps {
   topic: string;
   difficulty?: Difficulty;
   excludeQuestions?: string[];
   onComplete: (score: number, total: number, details: { question: string, category: string, isCorrect: boolean }[]) => void;
 }
 
-const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDIUM, excludeQuestions = [], onComplete }) => {
-  const [questions, setQuestions] = useState<Question[]>([]);
+const TrueFalseView: React.FC<TrueFalseViewProps> = ({ topic, difficulty = Difficulty.MEDIUM, excludeQuestions = [], onComplete }) => {
+  const [questions, setQuestions] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<boolean | null>(null);
   const [isAnswered, setIsAnswered] = useState(false);
   const [score, setScore] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quizDetails, setQuizDetails] = useState<{ question: string, category: string, isCorrect: boolean }[]>([]);
   
   const isMiniExam = topic.toLowerCase().includes('módulo:');
-  const totalTarget = isMiniExam ? 15 : 60;
 
   useEffect(() => {
-    const fetchQuiz = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await generateQuiz(topic, excludeQuestions, difficulty);
-        
-        // Validar que tenemos preguntas
-        if (!data || data.length === 0) {
-          setError('No se pudieron cargar las preguntas. Intenta de nuevo.');
-          setQuestions([]);
-          return;
-        }
-        
-        // Validar estructura de preguntas
-        const validQuestions = data.filter(q => 
-          q.id && q.question && Array.isArray(q.options) && 
-          q.options.length >= 2 && typeof q.correctAnswer === 'number'
+    try {
+      // Filtrar por dificultad y tema
+      let filtered = TRUE_FALSE_DATABASE.filter(q => !excludeQuestions.includes(q.id));
+      
+      if (isMiniExam) {
+        const moduleName = topic.split(':')[1].trim().toLowerCase();
+        filtered = filtered.filter(q => 
+          q.category.toLowerCase().includes(moduleName) || 
+          q.question.toLowerCase().includes(moduleName)
         );
-        
-        if (validQuestions.length === 0) {
-          setError('Las preguntas no tienen el formato correcto.');
-          setQuestions([]);
-          return;
-        }
-        
-        setQuestions(validQuestions);
-      } catch (err) {
-        console.error('Error al cargar quiz:', err);
-        setError('Error al cargar el examen. Por favor intenta de nuevo.');
-        setQuestions([]);
-      } finally {
-        setLoading(false);
       }
-    };
-    
-    fetchQuiz();
-  }, [topic, excludeQuestions, difficulty]);
+
+      // Si no hay suficientes preguntas, tomar todo lo disponible
+      if (filtered.length === 0) {
+        filtered = TRUE_FALSE_DATABASE.filter(q => !excludeQuestions.includes(q.id));
+      }
+
+      if (filtered.length === 0) {
+        setError('No hay preguntas disponibles para este módulo');
+        setQuestions([]);
+        return;
+      }
+
+      // Mezclar preguntas
+      setQuestions(filtered.sort(() => Math.random() - 0.5));
+      setError(null);
+    } catch (err) {
+      console.error('Error al cargar preguntas V/F:', err);
+      setError('Error al cargar las preguntas. Intenta de nuevo.');
+      setQuestions([]);
+    }
+  }, [topic, excludeQuestions]);
 
   const handleFinish = (finalScore: number, total: number, details: { question: string, category: string, isCorrect: boolean }[]) => {
     onComplete(finalScore, total, details);
   };
 
-  const handleSelect = (idx: number) => {
+  const handleSelect = (answer: boolean) => {
     if (isAnswered) return;
-    setSelectedOption(idx);
+    setSelectedAnswer(answer);
   };
 
   const handleConfirm = () => {
-    if (selectedOption === null) return;
+    if (selectedAnswer === null) return;
     
     const currentQ = questions[currentIndex];
-    const correct = selectedOption === currentQ.correctAnswer;
+    const correct = selectedAnswer === currentQ.isTrue;
     
-    // Buscar categoría en DB local o asignar una por defecto si es IA
-    const dbQuestion = QUESTION_DATABASE.find(db => db.question === currentQ.question);
-    const category = dbQuestion ? dbQuestion.category : "Materia General";
-
     const newDetail = {
       question: currentQ.question,
-      category,
+      category: currentQ.category,
       isCorrect: correct
     };
 
     setQuizDetails(prev => [...prev, newDetail]);
     if (correct) setScore(prev => prev + 1);
-    
     setIsAnswered(true);
   };
 
   const handleNext = () => {
     if (currentIndex + 1 < questions.length) {
       setCurrentIndex(prev => prev + 1);
-      setSelectedOption(null);
+      setSelectedAnswer(null);
       setIsAnswered(false);
     } else {
       handleFinish(score, questions.length, quizDetails);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 space-y-6">
-        <div className="relative w-20 h-20">
-          <div className="absolute inset-0 border-8 border-gray-900/10 rounded-full"></div>
-          <div className="absolute inset-0 border-8 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-        <div className="text-center animate-pulse">
-          <p className="text-gray-900 font-black uppercase text-sm tracking-widest mb-1">
-            {isMiniExam ? 'Mini-Examen por Módulo' : 'Simulacro Oficial OS10'}
-          </p>
-          <p className="text-red-600 font-bold text-[10px] uppercase tracking-[0.3em]">
-            Cargando batería de {totalTarget} preguntas...
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   if (error) {
     return (
@@ -142,7 +109,7 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
     );
   }
 
-  if (!questions.length) {
+  if (questions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center p-12 space-y-6 max-w-2xl mx-auto">
         <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center text-yellow-600 text-4xl">
@@ -157,7 +124,7 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
   }
 
   const q = questions[currentIndex];
-  const isCorrect = isAnswered && selectedOption === q.correctAnswer;
+  const isCorrect = isAnswered && selectedAnswer === q.isTrue;
 
   return (
     <div className="max-w-3xl mx-auto p-6 md:p-10 bg-white rounded-[45px] shadow-2xl border border-gray-100 animate-fadeIn relative overflow-hidden">
@@ -165,7 +132,7 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
       <div className="mb-10">
         <div className="flex flex-wrap justify-between items-end gap-4 mb-6">
           <div className="space-y-1">
-            <span className="text-[10px] font-black text-red-600 uppercase tracking-[0.3em] block">Evaluación OS10</span>
+            <span className="text-[10px] font-black text-red-600 uppercase tracking-[0.3em] block">Examen Verdadero/Falso</span>
             <div className="flex items-center gap-2">
               <span className="px-3 py-1 bg-gray-900 text-white text-[10px] font-black rounded-lg uppercase tracking-widest">{difficulty}</span>
               <span className="text-gray-400 font-bold text-xs">/ {questions.length} PREGUNTAS</span>
@@ -196,26 +163,46 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
       </div>
 
       <div className="space-y-4 mb-10">
-        {q.options.map((opt, idx) => {
-          let styles = "p-6 border-2 rounded-[30px] cursor-pointer transition-all flex items-start space-x-4 ";
+        {[
+          { value: true, label: 'VERDADERO', color: 'green' },
+          { value: false, label: 'FALSO', color: 'red' }
+        ].map((option) => {
+          let styles = "p-8 border-2 rounded-[30px] cursor-pointer transition-all flex items-center space-x-4 ";
+          
           if (isAnswered) {
-            if (idx === q.correctAnswer) styles += "border-green-500 bg-green-50 shadow-xl ";
-            else if (idx === selectedOption) styles += "border-red-500 bg-red-50 ";
-            else styles += "border-gray-50 opacity-40 ";
+            if (option.value === q.isTrue) {
+              styles += "border-green-500 bg-green-50 shadow-xl ";
+            } else if (option.value === selectedAnswer) {
+              styles += "border-red-500 bg-red-50 ";
+            } else {
+              styles += "border-gray-50 opacity-40 ";
+            }
           } else {
-            styles += selectedOption === idx 
-              ? "border-red-600 bg-red-50 shadow-xl scale-[1.03] z-10 " 
-              : "border-gray-100 hover:border-gray-200 hover:bg-gray-50 ";
+            if (selectedAnswer === option.value) {
+              styles += `border-${option.color}-600 bg-${option.color}-50 shadow-xl scale-[1.03] z-10 `;
+            } else {
+              styles += "border-gray-100 hover:border-gray-200 hover:bg-gray-50 ";
+            }
           }
 
           return (
-            <div key={idx} onClick={() => handleSelect(idx)} className={styles}>
-              <div className={`mt-1 flex-shrink-0 w-6 h-6 rounded-xl border-2 flex items-center justify-center transition-all ${
-                selectedOption === idx ? (isAnswered ? (idx === q.correctAnswer ? 'border-green-600 bg-green-600' : 'border-red-600 bg-red-600') : 'border-red-600 bg-red-600 rotate-12') : 'border-gray-200'
+            <div 
+              key={String(option.value)} 
+              onClick={() => handleSelect(option.value)} 
+              className={styles}
+            >
+              <div className={`flex-shrink-0 w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${
+                selectedAnswer === option.value 
+                  ? (isAnswered 
+                      ? (option.value === q.isTrue ? 'border-green-600 bg-green-600' : 'border-red-600 bg-red-600') 
+                      : `border-${option.color}-600 bg-${option.color}-600 scale-110`) 
+                  : 'border-gray-200'
               }`}>
-                {(selectedOption === idx || (isAnswered && idx === q.correctAnswer)) && <i className={`fas ${idx === q.correctAnswer ? 'fa-check' : 'fa-times'} text-[10px] text-white`}></i>}
+                {(selectedAnswer === option.value || (isAnswered && option.value === q.isTrue)) && 
+                  <i className={`fas ${option.value === q.isTrue ? 'fa-check' : 'fa-times'} text-xs text-white`}></i>
+                }
               </div>
-              <span className="text-base text-gray-800 font-bold leading-tight">{opt}</span>
+              <span className="text-xl font-black text-gray-800">{option.label}</span>
             </div>
           );
         })}
@@ -247,15 +234,15 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
       <div className="flex gap-4">
         {!isAnswered ? (
           <button 
-            disabled={selectedOption === null}
+            disabled={selectedAnswer === null}
             onClick={handleConfirm}
             className={`flex-1 py-5 rounded-[25px] font-black uppercase text-xs tracking-[0.2em] transition-all shadow-2xl ${
-              selectedOption === null 
+              selectedAnswer === null 
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' 
                 : 'bg-red-600 hover:bg-red-700 text-white transform hover:scale-[1.02] active:scale-95'
             }`}
           >
-            Confirmar y Validar
+            Confirmar Respuesta
           </button>
         ) : (
           <button 
@@ -263,9 +250,9 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
             className="flex-1 py-5 bg-gray-900 hover:bg-black text-white rounded-[25px] font-black uppercase text-xs tracking-[0.2em] transition-all shadow-2xl transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-3"
           >
             {currentIndex + 1 < questions.length ? (
-              <>Siguiente Pregunta <i className="fas fa-arrow-right text-[10px]"></i></>
+              <>Siguiente <i className="fas fa-arrow-right text-[10px]"></i></>
             ) : (
-              <>Finalizar Examen <i className="fas fa-flag-checkered"></i></>
+              <>Finalizar <i className="fas fa-flag-checkered"></i></>
             )}
           </button>
         )}
@@ -274,4 +261,4 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
   );
 };
 
-export default QuizView;
+export default TrueFalseView;

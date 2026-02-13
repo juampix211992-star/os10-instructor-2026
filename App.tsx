@@ -4,6 +4,7 @@ import { AppMode, Message, Difficulty, QuizAttempt } from './types';
 import { STUDY_MODULES } from './constants';
 import StudyPortal from './components/StudyPortal';
 import QuizView from './components/QuizView';
+import TrueFalseView from './components/TrueFalseView';
 import VisualStudy from './components/VisualStudy';
 import ResultsView from './components/ResultsView';
 import { getChatWithNavigation } from './geminiService';
@@ -17,32 +18,23 @@ interface UserAccount {
 
 const App: React.FC = () => {
   // --- AUTH & DATA ---
-  const [users, setUsers] = useState<UserAccount[]>(() => {
-    const saved = localStorage.getItem('os10_users_db');
-    if (saved) return JSON.parse(saved);
-    return [{ username: 'admin', password: '2026', status: 'approved', isAdmin: true }];
-  });
-
-  const [currentUser, setCurrentUser] = useState<UserAccount | null>(() => {
-    const saved = localStorage.getItem('os10_current_user');
-    return saved ? JSON.parse(saved) : null;
+  // Usuario por defecto sin necesidad de autenticación
+  const [currentUser] = useState<UserAccount | null>({ 
+    username: 'estudiante', 
+    status: 'approved', 
+    isAdmin: false 
   });
 
   const [quizHistory, setQuizHistory] = useState<QuizAttempt[]>(() => {
-    if (!currentUser) return [];
-    const saved = localStorage.getItem(`os10_history_${currentUser.username}`);
+    const saved = localStorage.getItem('os10_history_estudiante');
     return saved ? JSON.parse(saved) : [];
   });
-
-  const [authView, setAuthView] = useState<'login' | 'register' | 'admin_panel'>('login');
-  const [form, setForm] = useState({ user: '', pass: '' });
-  const [newAdminPass, setNewAdminPass] = useState('');
-  const [authMsg, setAuthMsg] = useState<{ text: string, type: 'error' | 'success' | 'info' } | null>(null);
 
   // --- APP STATE ---
   const [mode, setMode] = useState<AppMode>(AppMode.DASHBOARD);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [quizTopic, setQuizTopic] = useState<string>("Examen Integral OS10 (Ley 21.659 y Res. 2183)");
+  const [quizType, setQuizType] = useState<'multiple' | 'trueFalse'>('multiple');
   const [difficulty, setDifficulty] = useState<Difficulty>(Difficulty.MEDIUM);
   const [quizScore, setQuizScore] = useState<{ score: number, total: number } | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -56,74 +48,39 @@ const App: React.FC = () => {
   const [isAssistantLoading, setIsAssistantLoading] = useState(false);
 
   useEffect(() => {
-    localStorage.setItem('os10_users_db', JSON.stringify(users));
-  }, [users]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('os10_current_user', JSON.stringify(currentUser));
-      const saved = localStorage.getItem(`os10_history_${currentUser.username}`);
-      setQuizHistory(saved ? JSON.parse(saved) : []);
-    } else {
-      localStorage.removeItem('os10_current_user');
-    }
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem(`os10_history_${currentUser.username}`, JSON.stringify(quizHistory));
-    }
-  }, [quizHistory, currentUser]);
+    localStorage.setItem('os10_history_estudiante', JSON.stringify(quizHistory));
+  }, [quizHistory]);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsReady(true), 500);
     return () => clearTimeout(timer);
   }, []);
 
+  // Confirmación al abandonar examen sin terminar
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (mode === AppMode.EXAM || mode === AppMode.TRUE_FALSE) {
+        if (!quizScore) { // Si aún no terminó
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [mode, quizScore]);
+
   // --- AUTH LOGIC ---
-  const handleLogin = () => {
-    const user = users.find(u => u.username === form.user && u.password === form.pass);
-    if (!user) {
-      setAuthMsg({ text: 'Credenciales inválidas', type: 'error' });
-      return;
-    }
-    if (user.status === 'pending') {
-      setAuthMsg({ text: 'Tu acceso está pendiente de aprobación por el instructor.', type: 'info' });
-      return;
-    }
-    if (user.status === 'blocked') {
-      setAuthMsg({ text: 'Tu cuenta ha sido suspendida.', type: 'error' });
-      return;
-    }
-    setCurrentUser(user);
-    setAuthMsg(null);
-    setAuthView('login');
-  };
-
-  const handleRegister = () => {
-    if (form.user.length < 3 || form.pass.length < 4) {
-      setAuthMsg({ text: 'Usuario (min 3) y Clave (min 4) requeridos.', type: 'error' });
-      return;
-    }
-    if (users.find(u => u.username === form.user)) {
-      setAuthMsg({ text: 'El nombre de usuario ya existe.', type: 'error' });
-      return;
-    }
-    const newUser: UserAccount = { username: form.user, password: form.pass, status: 'pending', isAdmin: false };
-    setUsers([...users, newUser]);
-    setAuthMsg({ text: 'Registro exitoso. Espera la aprobación de tu instructor.', type: 'success' });
-    setAuthView('login');
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setAuthView('login');
-    setMode(AppMode.DASHBOARD);
-    setQuizScore(null);
-    setForm({ user: '', pass: '' });
-  };
-
+  // Autenticación deshabilitada - acceso directo
+  
   const saveAttempt = (score: number, total: number, details: { question: string, category: string, isCorrect: boolean }[]) => {
+    // Validar datos
+    if (score < 0 || score > total || !details || details.length === 0) {
+      console.error('Invalid attempt data:', { score, total, details });
+      return;
+    }
+    
     const newAttempt: QuizAttempt = {
       id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString(),
@@ -162,43 +119,22 @@ const App: React.FC = () => {
     setQuizTopic(topic || "Examen Integral OS10 (Ley 21.659 y Res. 2183)");
     if (selectedDifficulty) setDifficulty(selectedDifficulty);
     setQuizScore(null);
+    setQuizType('multiple');
     setMode(AppMode.EXAM);
     setIsSidebarOpen(false);
   };
 
+  const startTrueFalseQuiz = (topic?: string, selectedDifficulty?: Difficulty) => {
+    setQuizTopic(topic || "Examen Verdadero/Falso General");
+    if (selectedDifficulty) setDifficulty(selectedDifficulty);
+    setQuizScore(null);
+    setQuizType('trueFalse');
+    setMode(AppMode.TRUE_FALSE);
+    setIsSidebarOpen(false);
+  };
+
   if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-6 text-white font-sans overflow-hidden">
-        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none opacity-20">
-          <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-red-600 rounded-full blur-[120px]"></div>
-        </div>
-        <div className="w-full max-w-md bg-white/5 backdrop-blur-2xl p-10 rounded-[40px] border border-white/10 shadow-2xl relative z-10">
-          <div className="w-20 h-20 bg-red-600 rounded-3xl mx-auto flex items-center justify-center shadow-2xl border-4 border-white/10 mb-8">
-            <i className={`fas ${authView === 'login' ? 'fa-user-shield' : 'fa-user-plus'} text-3xl`}></i>
-          </div>
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-black uppercase tracking-tighter italic">{authView === 'login' ? 'Acceso de Personal' : 'Registro de Alumno'}</h2>
-          </div>
-          {authMsg && (
-            <div className={`p-4 rounded-2xl mb-6 text-[10px] font-black uppercase tracking-widest text-center ${
-              authMsg.type === 'error' ? 'bg-red-600/20 text-red-500' : 'bg-green-600/20 text-green-500'
-            }`}>
-              {authMsg.text}
-            </div>
-          )}
-          <div className="space-y-4">
-            <input type="text" placeholder="Usuario" value={form.user} onChange={(e) => setForm({...form, user: e.target.value})} className="w-full bg-gray-900/50 border border-white/10 rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none" />
-            <input type="password" placeholder="Contraseña" value={form.pass} onChange={(e) => setForm({...form, pass: e.target.value})} className="w-full bg-gray-900/50 border border-white/10 rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none" />
-            <button onClick={authView === 'login' ? handleLogin : handleRegister} className="w-full bg-red-600 hover:bg-red-700 py-5 rounded-2xl font-black uppercase text-xs tracking-[0.2em]">
-              {authView === 'login' ? 'Entrar al Sistema' : 'Crear mi Cuenta'}
-            </button>
-            <button onClick={() => setAuthView(authView === 'login' ? 'register' : 'login')} className="w-full text-[10px] font-black uppercase tracking-widest text-gray-400 mt-4">
-              {authView === 'login' ? '¿No tienes cuenta? Regístrate' : '¿Ya tienes cuenta? Entra'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
+    return null; // No mostrar pantalla de login
   }
 
   return (
@@ -215,12 +151,21 @@ const App: React.FC = () => {
             {[
               { id: AppMode.DASHBOARD, label: 'Panel Principal', icon: 'fa-home' },
               { id: AppMode.STUDY, label: 'Centro de Estudio', icon: 'fa-book-open' },
+              { id: AppMode.TRUE_FALSE, label: 'Verdadero/Falso', icon: 'fa-question' },
               { id: AppMode.VISUAL, label: 'Simulador Visual', icon: 'fa-eye' },
               { id: AppMode.RESULTS, label: 'Mis Resultados', icon: 'fa-chart-pie' },
             ].map((item) => (
               <button
                 key={item.id}
-                onClick={() => { setMode(item.id); setQuizScore(null); setIsSidebarOpen(false); }}
+                onClick={() => { 
+                  if (item.id === AppMode.TRUE_FALSE) {
+                    startTrueFalseQuiz();
+                  } else {
+                    setMode(item.id); 
+                    setQuizScore(null); 
+                    setIsSidebarOpen(false); 
+                  }
+                }}
                 className={`w-full flex items-center space-x-4 px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all ${mode === item.id ? 'bg-red-600 text-white shadow-xl translate-x-2' : 'hover:bg-white/5 text-gray-400 hover:text-white'}`}
               >
                 <i className={`fas ${item.icon} text-sm`}></i>
@@ -228,17 +173,6 @@ const App: React.FC = () => {
               </button>
             ))}
           </nav>
-
-          <div className="mt-auto space-y-4 pt-8 border-t border-white/5">
-            <div className="flex items-center space-x-3 px-4 py-2 bg-white/5 rounded-2xl">
-              <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center font-black text-xs uppercase">{currentUser.username.charAt(0)}</div>
-              <span className="text-[10px] font-black uppercase tracking-tighter italic truncate">{currentUser.username}</span>
-            </div>
-            <button onClick={handleLogout} className="w-full flex items-center space-x-4 px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest text-gray-500 hover:text-red-500 hover:bg-red-500/10 transition-all">
-              <i className="fas fa-power-off text-sm"></i>
-              <span>Cerrar Sesión</span>
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -252,7 +186,8 @@ const App: React.FC = () => {
             <h2 className="text-[11px] font-black uppercase tracking-widest text-gray-400">Estado de Operación: <span className="text-green-500">Sincronizado OS10</span></h2>
           </div>
           <div className="flex items-center gap-4">
-            <button onClick={() => startQuiz()} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] shadow-lg transition-all transform active:scale-95">Simulacro Rápido</button>
+            <button onClick={() => startQuiz()} className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] shadow-lg transition-all transform active:scale-95">Opción Múltiple</button>
+            <button onClick={() => startTrueFalseQuiz()} className="bg-gray-900 hover:bg-black text-white px-5 py-2.5 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] shadow-lg transition-all transform active:scale-95">Verdadero/Falso</button>
           </div>
         </header>
 
@@ -266,7 +201,8 @@ const App: React.FC = () => {
                   <p className="text-gray-400 text-lg font-bold uppercase tracking-tight italic mb-10">Tu carrera como Guardia de Seguridad comienza aquí. Basado estrictamente en la Ley 21.659.</p>
                   <div className="flex flex-wrap gap-4">
                     <button onClick={() => setMode(AppMode.STUDY)} className="bg-white text-gray-900 px-8 py-4 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:bg-gray-100 transition-all">Ver Temarios</button>
-                    <button onClick={() => startQuiz()} className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center gap-3">Iniciar Examen <i className="fas fa-play text-[8px]"></i></button>
+                    <button onClick={() => startQuiz()} className="bg-red-600 text-white px-8 py-4 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:bg-red-700 transition-all flex items-center gap-3">Examen M. Opción <i className="fas fa-play text-[8px]"></i></button>
+                    <button onClick={() => startTrueFalseQuiz()} className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl hover:bg-black transition-all flex items-center gap-3">Examen V/F <i className="fas fa-play text-[8px]"></i></button>
                   </div>
                 </div>
                 <i className="fas fa-shield-halved absolute -right-10 -bottom-10 text-[300px] text-white/5 rotate-12"></i>
@@ -284,7 +220,7 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {mode === AppMode.STUDY && <StudyPortal difficulty={difficulty} setDifficulty={setDifficulty} onStartQuiz={startQuiz} />}
+          {mode === AppMode.STUDY && <StudyPortal difficulty={difficulty} setDifficulty={setDifficulty} onStartQuiz={startQuiz} onStartTrueFalse={startTrueFalseQuiz} />}
           {mode === AppMode.VISUAL && <VisualStudy />}
           {mode === AppMode.RESULTS && <ResultsView attempts={quizHistory} />}
           
@@ -302,6 +238,24 @@ const App: React.FC = () => {
                 </div>
               ) : (
                 <QuizView topic={quizTopic} difficulty={difficulty} onComplete={saveAttempt} />
+              )}
+            </div>
+          )}
+
+          {mode === AppMode.TRUE_FALSE && (
+            <div className="max-w-4xl mx-auto space-y-4 animate-fadeIn">
+              {quizScore ? (
+                <div className="bg-white p-16 rounded-[60px] shadow-2xl text-center border border-gray-100 max-w-xl mx-auto">
+                  <div className={`w-28 h-28 mx-auto rounded-full flex items-center justify-center mb-8 text-5xl text-white ${quizScore.score >= quizScore.total * 0.7 ? 'bg-green-500 shadow-green-200' : 'bg-red-600 shadow-red-200'} shadow-2xl`}><i className={`fas ${quizScore.score >= quizScore.total * 0.7 ? 'fa-check' : 'fa-times'}`}></i></div>
+                  <h3 className="text-4xl font-black mb-4 uppercase tracking-tighter italic">{quizScore.score >= quizScore.total * 0.7 ? '¡APROBADO!' : 'REPROBADO'}</h3>
+                  <p className="text-gray-400 mb-12 text-sm font-black uppercase tracking-widest">Resultado Final: {quizScore.score} / {quizScore.total}</p>
+                  <div className="flex gap-4">
+                    <button onClick={() => startTrueFalseQuiz(quizTopic)} className="flex-1 bg-red-600 text-white py-5 rounded-3xl font-black uppercase text-[10px] tracking-widest shadow-xl">Reintentar</button>
+                    <button onClick={() => setMode(AppMode.RESULTS)} className="flex-1 bg-gray-900 text-white py-5 rounded-3xl font-black uppercase text-[10px] tracking-widest shadow-xl">Ver Analítica</button>
+                  </div>
+                </div>
+              ) : (
+                <TrueFalseView topic={quizTopic} difficulty={difficulty} onComplete={saveAttempt} />
               )}
             </div>
           )}

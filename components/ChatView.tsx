@@ -14,10 +14,19 @@ const ChatView: React.FC = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const MAX_MESSAGES = 50;
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    // Limitar a últimos MAX_MESSAGES mensajes
+    if (messages.length > MAX_MESSAGES) {
+      setMessages(messages.slice(-MAX_MESSAGES));
     }
   }, [messages]);
 

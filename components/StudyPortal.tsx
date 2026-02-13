@@ -8,9 +8,10 @@ interface StudyPortalProps {
   difficulty: Difficulty;
   setDifficulty: (d: Difficulty) => void;
   onStartQuiz: (topic: string, diff?: Difficulty) => void;
+  onStartTrueFalse: (topic: string, diff?: Difficulty) => void;
 }
 
-const StudyPortal: React.FC<StudyPortalProps> = ({ difficulty, setDifficulty, onStartQuiz }) => {
+const StudyPortal: React.FC<StudyPortalProps> = ({ difficulty, setDifficulty, onStartQuiz, onStartTrueFalse }) => {
   const [selectedId, setSelectedId] = useState<string>(STUDY_CONTENT[0].id);
   const [openMaterialIdx, setOpenMaterialIdx] = useState<number | null>(null);
   
@@ -60,7 +61,7 @@ const StudyPortal: React.FC<StudyPortalProps> = ({ difficulty, setDifficulty, on
                 
                 {/* Control Dificultad Mini-Examen */}
                 <div className="flex flex-col gap-3">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 text-center md:text-right">Dificultad Mini-Examen:</span>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-gray-400 text-center md:text-right">Dificultad Examen:</span>
                   <div className="flex bg-gray-200 p-1 rounded-xl">
                     {[Difficulty.LOW, Difficulty.MEDIUM, Difficulty.HIGH].map((d) => (
                       <button
@@ -76,13 +77,22 @@ const StudyPortal: React.FC<StudyPortalProps> = ({ difficulty, setDifficulty, on
                       </button>
                     ))}
                   </div>
-                  <button 
-                    onClick={() => onStartQuiz(`Módulo: ${selectedModule.title}`, difficulty)}
-                    className="flex items-center justify-center gap-3 bg-[#0f172a] hover:bg-black text-white px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all active:scale-95 group"
-                  >
-                    <i className="fas fa-vial group-hover:animate-bounce"></i>
-                    Mini-Examen (15 Preg.)
-                  </button>
+                  <div className="flex flex-col gap-2">
+                    <button 
+                      onClick={() => onStartQuiz(`Módulo: ${selectedModule.title}`, difficulty)}
+                      className="flex items-center justify-center gap-3 bg-[#0f172a] hover:bg-black text-white px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all active:scale-95 group"
+                    >
+                      <i className="fas fa-vial group-hover:animate-bounce"></i>
+                      Opción Múltiple (15)
+                    </button>
+                    <button 
+                      onClick={() => onStartTrueFalse(`Módulo: ${selectedModule.title}`, difficulty)}
+                      className="flex items-center justify-center gap-3 bg-red-600 hover:bg-red-700 text-white px-6 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all active:scale-95 group"
+                    >
+                      <i className="fas fa-question-circle group-hover:animate-bounce"></i>
+                      Verdadero/Falso (20)
+                    </button>
+                  </div>
                 </div>
               </div>
               <p className="text-lg text-gray-600 font-bold leading-relaxed border-l-8 border-red-600 pl-8 uppercase tracking-tight italic">
@@ -190,11 +200,16 @@ const StudyPortal: React.FC<StudyPortalProps> = ({ difficulty, setDifficulty, on
             <i className="fas fa-graduation-cap text-3xl text-red-600"></i>
             <h5 className="text-lg font-black uppercase italic tracking-tighter">¿Listo para Evaluarte?</h5>
             <p className="text-[10px] font-bold text-gray-400 uppercase leading-tight">
-              Completa el simulacro de 15 preguntas para validar tus conocimientos sobre {selectedModule.title}.
+              Prueba tus conocimientos sobre {selectedModule.title}.
             </p>
-            <button onClick={() => onStartQuiz(`Módulo: ${selectedModule.title}`, difficulty)} className="w-full bg-red-600 hover:bg-red-700 text-white py-4 rounded-2xl font-black uppercase text-[11px] tracking-widest shadow-xl transition-all active:scale-95">
-              Iniciar Mini-Simulacro
-            </button>
+            <div className="space-y-3">
+              <button onClick={() => onStartQuiz(`Módulo: ${selectedModule.title}`, difficulty)} className="w-full bg-[#0f172a] hover:bg-black text-white py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all active:scale-95">
+                Opción Múltiple
+              </button>
+              <button onClick={() => onStartTrueFalse(`Módulo: ${selectedModule.title}`, difficulty)} className="w-full bg-red-600 hover:bg-red-700 text-white py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all active:scale-95">
+                Verdadero/Falso
+              </button>
+            </div>
           </div>
         </div>
       </div>

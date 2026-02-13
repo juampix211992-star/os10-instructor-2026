@@ -55,83 +55,115 @@ export const generateQuiz = async (
   excludeQuestions: string[] = [], 
   difficulty: Difficulty = Difficulty.MEDIUM
 ): Promise<Question[]> => {
-  const isMiniExam = topic.toLowerCase().includes('módulo:');
-  const TOTAL_EXAM_SIZE = isMiniExam ? 15 : 60;
-  
-  // Intentar filtrar la base de datos local por categoría si el tema coincide
-  let pool = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question));
-  
-  if (isMiniExam) {
-    const moduleName = topic.split(':')[1].trim().toLowerCase();
-    // Filtro heurístico simple por categoría basada en el nombre del módulo
-    pool = pool.filter(q => 
-      q.category.toLowerCase().includes(moduleName) || 
-      q.question.toLowerCase().includes(moduleName)
-    );
-  }
+  try {
+    const isMiniExam = topic.toLowerCase().includes('módulo:');
+    const TOTAL_EXAM_SIZE = isMiniExam ? 15 : 60;
+    
+    // Intentar filtrar la base de datos local por categoría si el tema coincide
+    let pool = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question));
+    
+    if (isMiniExam) {
+      const moduleName = topic.split(':')[1]?.trim().toLowerCase() || '';
+      if (moduleName) {
+        // Filtro heurístico simple por categoría basada en el nombre del módulo
+        pool = pool.filter(q => 
+          q.category.toLowerCase().includes(moduleName) || 
+          q.question.toLowerCase().includes(moduleName)
+        );
+      }
+    }
 
-  if (difficulty === Difficulty.LOW) pool = pool.filter(q => q.category !== 'Dificultad');
-  else if (difficulty === Difficulty.HIGH) pool = pool.filter(q => q.category === 'Dificultad' || q.category === 'Legal');
+    if (difficulty === Difficulty.LOW) pool = pool.filter(q => q.category !== 'Dificultad');
+    else if (difficulty === Difficulty.HIGH) pool = pool.filter(q => q.category === 'Dificultad' || q.category === 'Legal');
 
-  pool.sort(() => Math.random() - 0.5);
+    pool.sort(() => Math.random() - 0.5);
 
-  const MAX_AI_QUESTIONS = isMiniExam ? 8 : 5;
-  const neededFromAI = Math.max(0, TOTAL_EXAM_SIZE - pool.length) + (isMiniExam ? 2 : 0);
+    const MAX_AI_QUESTIONS = isMiniExam ? 8 : 5;
+    const neededFromAI = Math.max(0, TOTAL_EXAM_SIZE - pool.length) + (isMiniExam ? 2 : 0);
 
-  if (neededFromAI <= 0 && pool.length >= TOTAL_EXAM_SIZE) {
-    return pool.slice(0, TOTAL_EXAM_SIZE);
-  }
-
-  const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || '';
-  if (!apiKey) {
-    // Si no hay API key, devolvemos solo preguntas de la base de datos local
-    if (pool.length >= TOTAL_EXAM_SIZE) {
+    // Si ya tenemos suficientes preguntas de la DB local, devolverlas
+    if (neededFromAI <= 0 && pool.length >= TOTAL_EXAM_SIZE) {
       return pool.slice(0, TOTAL_EXAM_SIZE);
     }
-    const fallback = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question)).sort(() => Math.random() - 0.5);
-    return [...pool, ...fallback].slice(0, TOTAL_EXAM_SIZE);
-  }
 
-  const ai = new GoogleGenAI({ apiKey });
-  const prompt = `Genera EXACTAMENTE ${neededFromAI} preguntas para Guardias de Seguridad (GG.SS.) de Chile sobre el TEMA: "${topic}". 
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY || '';
+    if (!apiKey) {
+      // Si no hay API key, devolvemos solo preguntas de la base de datos local
+      console.warn('No hay API key de Gemini. Usando solo base de datos local.');
+      if (pool.length > 0) {
+        return pool.slice(0, Math.min(TOTAL_EXAM_SIZE, pool.length));
+      }
+      // Fallback: todas las preguntas
+      const fallback = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question))
+        .sort(() => Math.random() - 0.5);
+      return fallback.slice(0, TOTAL_EXAM_SIZE);
+    }
+
+    // Intentar obtener preguntas de IA con reintentos
+    let aiQuestions: Question[] = [];
+    if (neededFromAI > 0) {
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const prompt = `Genera EXACTAMENTE ${neededFromAI} preguntas para Guardias de Seguridad (GG.SS.) de Chile sobre el TEMA: "${topic}". 
   Dificultad: ${difficulty.toUpperCase()}. 
   Asegúrate de incluir aspectos técnicos vigentes en 2026.
   IMPORTANTE: Formato JSON. Cada pregunta debe incluir una 'explanation' técnica citando la ley vigente.`;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              id: { type: Type.STRING },
-              question: { type: Type.STRING },
-              options: { type: Type.ARRAY, items: { type: Type.STRING } },
-              correctAnswer: { type: Type.INTEGER },
-              explanation: { type: Type.STRING }
-            },
-            required: ["id", "question", "options", "correctAnswer", "explanation"]
+        const response = await ai.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: prompt,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  id: { type: Type.STRING },
+                  question: { type: Type.STRING },
+                  options: { type: Type.ARRAY, items: { type: Type.STRING } },
+                  correctAnswer: { type: Type.INTEGER },
+                  explanation: { type: Type.STRING }
+                },
+                required: ["id", "question", "options", "correctAnswer", "explanation"]
+              }
+            }
+          }
+        });
+
+        if (response.text) {
+          const parsed = JSON.parse(cleanAIResponse(response.text || "[]"));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            aiQuestions = parsed.filter(q => 
+              q.id && q.question && Array.isArray(q.options) && q.options.length >= 2 && 
+              typeof q.correctAnswer === 'number' && q.explanation
+            );
           }
         }
+      } catch (aiError) {
+        console.warn('Error generando preguntas con IA, usando fallback local:', aiError);
+        // Continuar con preguntas locales
       }
-    });
-    
-    const aiQuestions = JSON.parse(cleanAIResponse(response.text || "[]"));
-    const finalExam = [...pool, ...aiQuestions].slice(0, TOTAL_EXAM_SIZE);
-    return finalExam.sort(() => Math.random() - 0.5);
-  } catch (e) {
-    // Si falla la IA y no hay suficientes en el pool específico, tomamos del pool general
-    if (pool.length < TOTAL_EXAM_SIZE) {
-      const fallback = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question)).sort(() => Math.random() - 0.5);
-      return [...pool, ...fallback].slice(0, TOTAL_EXAM_SIZE);
     }
-    return pool.slice(0, TOTAL_EXAM_SIZE);
+
+    // Combinar preguntas locales + IA y mezclar
+    const finalExam = [...pool, ...aiQuestions].slice(0, TOTAL_EXAM_SIZE);
+    
+    // Asegurar que tenemos al menos algunas preguntas
+    if (finalExam.length === 0) {
+      const fallback = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question))
+        .sort(() => Math.random() - 0.5);
+      return fallback.slice(0, TOTAL_EXAM_SIZE);
+    }
+    
+    return finalExam.sort(() => Math.random() - 0.5);
+  } catch (error) {
+    console.error('Error crítico en generateQuiz:', error);
+    // Último recurso: todas las preguntas locales
+    const fallback = QUESTION_DATABASE.filter(q => !excludeQuestions.includes(q.question))
+      .sort(() => Math.random() - 0.5);
+    return fallback.slice(0, isMiniExam ? 15 : 60);
   }
 };
 

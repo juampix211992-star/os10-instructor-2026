@@ -20,15 +20,17 @@ const ResultsView: React.FC<ResultsViewProps> = ({ attempts }) => {
     });
   });
 
-  const stats: CategoryStat[] = Object.entries(categoryMap).map(([category, data]) => ({
-    category,
-    correct: data.correct,
-    total: data.total,
-    percentage: Math.round((data.correct / data.total) * 100)
-  })).sort((a, b) => b.percentage - a.percentage);
+  const stats: CategoryStat[] = Object.entries(categoryMap)
+    .map(([category, data]) => ({
+      category,
+      correct: data.correct,
+      total: data.total,
+      percentage: data.total > 0 ? Math.round((data.correct / data.total) * 100) : 0
+    }))
+    .sort((a, b) => b.percentage - a.percentage);
 
   const totalExams = attempts.length;
-  const avgScore = totalExams > 0 
+  const avgScore = totalExams > 0 && attempts.every(a => a.total > 0)
     ? Math.round(attempts.reduce((acc, curr) => acc + (curr.score / curr.total), 0) / totalExams * 100) 
     : 0;
 

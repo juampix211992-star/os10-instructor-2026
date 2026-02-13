@@ -3,6 +3,7 @@ export enum AppMode {
   DASHBOARD = 'DASHBOARD',
   STUDY = 'STUDY',
   EXAM = 'EXAM',
+  TRUE_FALSE = 'TRUE_FALSE',
   LAWS = 'LAWS',
   VISUAL = 'VISUAL',
   RESULTS = 'RESULTS'
