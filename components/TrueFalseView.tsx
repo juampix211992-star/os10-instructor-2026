@@ -7,9 +7,11 @@ interface TrueFalseViewProps {
   difficulty?: Difficulty;
   excludeQuestions?: string[];
   onComplete: (score: number, total: number, details: { question: string, category: string, isCorrect: boolean }[]) => void;
+  initialQuestions?: any[];
+  isPreparing?: boolean;
 }
 
-const TrueFalseView: React.FC<TrueFalseViewProps> = ({ topic, difficulty = Difficulty.MEDIUM, excludeQuestions = [], onComplete }) => {
+const TrueFalseView: React.FC<TrueFalseViewProps> = ({ topic, difficulty = Difficulty.MEDIUM, excludeQuestions = [], onComplete, initialQuestions, isPreparing }) => {
   const [questions, setQuestions] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<boolean | null>(null);
@@ -22,6 +24,14 @@ const TrueFalseView: React.FC<TrueFalseViewProps> = ({ topic, difficulty = Diffi
 
   useEffect(() => {
     try {
+      // Si el padre proporcionó preguntas pre-generadas, úsalas
+      if (initialQuestions && initialQuestions.length > 0) {
+        console.debug('[TrueFalseView] using initialQuestions from parent:', initialQuestions.length);
+        setQuestions(initialQuestions.slice());
+        setError(null);
+        return;
+      }
+
       // Filtrar por dificultad y tema
       let filtered = TRUE_FALSE_DATABASE.filter(q => !excludeQuestions.includes(q.id));
       

@@ -39,6 +39,8 @@ const App: React.FC = () => {
   const [quizScore, setQuizScore] = useState<{ score: number, total: number } | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [currentQuestions, setCurrentQuestions] = useState<any[] | null>(null);
+  const [isPreparingQuiz, setIsPreparingQuiz] = useState(false);
 
   const [isAssistantOpen, setIsAssistantOpen] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState<Message[]>([
@@ -93,6 +95,8 @@ const App: React.FC = () => {
     };
     setQuizHistory(prev => [...prev, newAttempt]);
     setQuizScore({ score, total });
+    // Limpiar preguntas actuales para la siguiente sesión
+    setCurrentQuestions(null);
   };
 
   // --- ASSISTANT LOGIC ---
@@ -118,21 +122,57 @@ const App: React.FC = () => {
   };
 
   const startQuiz = (topic?: string, selectedDifficulty?: Difficulty) => {
-    setQuizTopic(topic || "Examen Integral OS10 (Ley 21.659 y Res. 2183)");
-    if (selectedDifficulty) setDifficulty(selectedDifficulty);
-    setQuizScore(null);
-    setQuizType('multiple');
-    setMode(AppMode.EXAM);
-    setIsSidebarOpen(false);
+    (async () => {
+      setIsPreparingQuiz(true);
+      setQuizTopic(topic || "Examen Integral OS10 (Ley 21.659 y Res. 2183)");
+      if (selectedDifficulty) setDifficulty(selectedDifficulty);
+      setQuizScore(null);
+      setQuizType('multiple');
+      setIsSidebarOpen(false);
+      try {
+        const questions = await generateQuiz(topic || "Examen Integral OS10 (Ley 21.659 y Res. 2183)", [], selectedDifficulty || difficulty);
+        setCurrentQuestions(questions);
+        setMode(AppMode.EXAM);
+      } catch (e) {
+        console.error('Error preparando examen:', e);
+        setCurrentQuestions(null);
+        setMode(AppMode.EXAM);
+      } finally {
+        setIsPreparingQuiz(false);
+      }
+    })();
   };
 
   const startTrueFalseQuiz = (topic?: string, selectedDifficulty?: Difficulty) => {
-    setQuizTopic(topic || "Examen Verdadero/Falso General");
-    if (selectedDifficulty) setDifficulty(selectedDifficulty);
-    setQuizScore(null);
-    setQuizType('trueFalse');
-    setMode(AppMode.TRUE_FALSE);
-    setIsSidebarOpen(false);
+    (async () => {
+      setIsPreparingQuiz(true);
+      setQuizTopic(topic || "Examen Verdadero/Falso General");
+      if (selectedDifficulty) setDifficulty(selectedDifficulty);
+      setQuizScore(null);
+      setQuizType('trueFalse');
+      setIsSidebarOpen(false);
+      try {
+        const mod = await import('./trueFalseDatabase');
+        let pool = mod.TRUE_FALSE_DATABASE.slice();
+        const isMini = (topic || '').toLowerCase().includes('módulo:');
+        if (isMini) {
+          const moduleName = (topic || '').split(':')[1]?.trim().toLowerCase() || '';
+          if (moduleName) {
+            pool = pool.filter((q: any) => q.category.toLowerCase().includes(moduleName) || q.question.toLowerCase().includes(moduleName));
+          }
+        }
+        if (pool.length === 0) pool = mod.TRUE_FALSE_DATABASE.slice();
+        pool = pool.sort(() => Math.random() - 0.5);
+        setCurrentQuestions(pool);
+        setMode(AppMode.TRUE_FALSE);
+      } catch (e) {
+        console.error('Error preparando V/F:', e);
+        setCurrentQuestions(null);
+        setMode(AppMode.TRUE_FALSE);
+      } finally {
+        setIsPreparingQuiz(false);
+      }
+    })();
   };
 
   if (!currentUser) {
@@ -260,7 +300,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <QuizView topic={quizTopic} difficulty={difficulty} onComplete={saveAttempt} />
+                <QuizView topic={quizTopic} difficulty={difficulty} onComplete={saveAttempt} initialQuestions={currentQuestions || undefined} isPreparing={isPreparingQuiz} />
               )}
             </div>
           )}
@@ -278,7 +318,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
               ) : (
-                <TrueFalseView topic={quizTopic} difficulty={difficulty} onComplete={saveAttempt} />
+                <TrueFalseView topic={quizTopic} difficulty={difficulty} onComplete={saveAttempt} initialQuestions={currentQuestions || undefined} isPreparing={isPreparingQuiz} />
               )}
             </div>
           )}

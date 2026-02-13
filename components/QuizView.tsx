@@ -9,9 +9,11 @@ interface QuizViewProps {
   difficulty?: Difficulty;
   excludeQuestions?: string[];
   onComplete: (score: number, total: number, details: { question: string, category: string, isCorrect: boolean }[]) => void;
+  initialQuestions?: any[];
+  isPreparing?: boolean;
 }
 
-const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDIUM, excludeQuestions = [], onComplete }) => {
+const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDIUM, excludeQuestions = [], onComplete, initialQuestions, isPreparing }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
@@ -24,45 +26,53 @@ const QuizView: React.FC<QuizViewProps> = ({ topic, difficulty = Difficulty.MEDI
   const isMiniExam = topic.toLowerCase().includes('módulo:');
   const totalTarget = isMiniExam ? 15 : 60;
 
-  useEffect(() => {
-    const fetchQuiz = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await generateQuiz(topic, excludeQuestions, difficulty);
-        console.debug('[QuizView] generateQuiz returned length:', data ? data.length : 'null', data && data.slice ? data.slice(0,3) : data);
-        
-        // Validar que tenemos preguntas
-        if (!data || data.length === 0) {
-          setError('No se pudieron cargar las preguntas. Intenta de nuevo.');
+    useEffect(() => {
+      let cancelled = false;
+      const fetchQuiz = async () => {
+        try {
+          setLoading(true);
+          setError(null);
+          // Si el padre pasó preguntas pre-generadas, úsalas y no llames a generateQuiz
+          if (initialQuestions && initialQuestions.length > 0) {
+            console.debug('[QuizView] using initialQuestions from parent, count:', initialQuestions.length);
+            setQuestions(initialQuestions.slice());
+            setLoading(false);
+            return;
+          }
+
+          const data = await generateQuiz(topic, excludeQuestions, difficulty);
+          console.debug('[QuizView] generateQuiz returned length:', data ? data.length : 'null', data && data.slice ? data.slice(0,3) : data);
+
+          if (!data || data.length === 0) {
+            setError('No se pudieron cargar las preguntas. Intenta de nuevo.');
+            setQuestions([]);
+            return;
+          }
+
+          const validQuestions = data.filter(q => 
+            q.id && q.question && Array.isArray(q.options) && 
+            q.options.length >= 2 && typeof q.correctAnswer === 'number'
+          );
+
+          if (validQuestions.length === 0) {
+            setError('Las preguntas no tienen el formato correcto.');
+            setQuestions([]);
+            return;
+          }
+
+          if (!cancelled) setQuestions(validQuestions);
+        } catch (err) {
+          console.error('Error al cargar quiz:', err);
+          setError('Error al cargar el examen. Por favor intenta de nuevo. (' + (err && (err as any).message ? (err as any).message : String(err)) + ')');
           setQuestions([]);
-          return;
+        } finally {
+          if (!cancelled) setLoading(false);
         }
-        
-        // Validar estructura de preguntas
-        const validQuestions = data.filter(q => 
-          q.id && q.question && Array.isArray(q.options) && 
-          q.options.length >= 2 && typeof q.correctAnswer === 'number'
-        );
-        
-        if (validQuestions.length === 0) {
-          setError('Las preguntas no tienen el formato correcto.');
-          setQuestions([]);
-          return;
-        }
-        
-        setQuestions(validQuestions);
-      } catch (err) {
-        console.error('Error al cargar quiz:', err);
-        setError('Error al cargar el examen. Por favor intenta de nuevo. (' + (err && (err as any).message ? (err as any).message : String(err)) + ')');
-        setQuestions([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchQuiz();
-  }, [topic, excludeQuestions, difficulty]);
+      };
+
+      fetchQuiz();
+      return () => { cancelled = true; };
+    }, [topic, excludeQuestions, difficulty, initialQuestions]);
 
   const handleFinish = (finalScore: number, total: number, details: { question: string, category: string, isCorrect: boolean }[]) => {
     onComplete(finalScore, total, details);
